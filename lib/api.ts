@@ -177,6 +177,7 @@ type ApiAddressInput = Omit<ApiAddress, "id" | "is_default"> & {
 
 export interface ApiOrder {
   id: number;
+  uuid: string;
   slug: string;
   order_number: string;
   status: "pending" | "awaiting_store_response" | "partially_accepted" | "accepted_by_seller" | "ready_for_pickup" | "assigned" | "preparing" | "collected" | "out_for_delivery" | "processing" | "shipped" | "delivered" | "cancelled" | "failed" | "rejected_by_seller" | string;
@@ -192,6 +193,9 @@ export interface ApiOrder {
   currency_code?: string;
   payment_method?: string;
   payment_status?: string;
+  tracking_code?: string;
+  admin_note?: string;
+  invoice_downloadable?: boolean;
   created_at: string;
   updated_at: string;
   items: ApiOrderItem[];
@@ -1512,6 +1516,7 @@ function normalizeOrder(raw: Record<string, unknown>): ApiOrder {
 
   return {
     ...(raw as object),
+    uuid: (raw.uuid as string) ?? (raw.slug as string) ?? String(raw.id),
     order_number: (raw.order_number as string) ?? (raw.slug as string) ?? String(raw.id),
     total: parseFloat(String(raw.final_total ?? raw.total_payable ?? 0)),
     final_total: parseFloat(String(raw.final_total ?? raw.total_payable ?? 0)),
@@ -1522,6 +1527,7 @@ function normalizeOrder(raw: Record<string, unknown>): ApiOrder {
     gst_amount: parseFloat(String(raw.gst_amount ?? raw.total_gst ?? 0)),
     promo_discount: parseFloat(String(raw.promo_discount ?? 0)),
     gift_card_discount: parseFloat(String(raw.gift_card_discount ?? 0)),
+    invoice_downloadable: raw.invoice_downloadable === true,
     items,
   } as ApiOrder;
 }
@@ -1547,17 +1553,31 @@ export async function getOrders(): Promise<ApiOrder[]> {
   return rows.map(normalizeOrder);
 }
 
-export async function trackOrder(
-  orderNumber: string,
-  phone: string
-): Promise<ApiOrder | null> {
-  const res = await apiFetch<ApiResponse<ApiOrder>>("/api/orders/track", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ order_number: orderNumber, phone }),
-  });
-  if (res && "data" in res) return res.data;
-  return null;
+export async function trackOrder(query: string): Promise<ApiOrder | null> {
+  const res = await apiFetch<{ success: boolean; data: Record<string, unknown> }>(
+    "/api/orders/track",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query }),
+    }
+  );
+  if (!res?.success || !res.data || typeof res.data !== "object" || Array.isArray(res.data)) return null;
+  return normalizeOrder(res.data as Record<string, unknown>);
+}
+
+export async function downloadOrderInvoice(slug: string): Promise<Blob | null> {
+  const token = getToken();
+  try {
+    const res = await fetch(`${API_BASE}/api/user/orders/${encodeURIComponent(slug)}/invoice`, {
+      headers: { Accept: "application/pdf", ...getAuthHeaders(token) },
+      credentials: "include",
+    });
+    if (!res.ok) return null;
+    return res.blob();
+  } catch {
+    return null;
+  }
 }
 
 // ─── Coupons ──────────────────────────────────────────────────────────────────

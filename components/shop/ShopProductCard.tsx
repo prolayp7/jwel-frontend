@@ -87,7 +87,10 @@ export default function ShopProductCard({ product }: { product: RealApiProduct }
   // Price to show in grid (prefer discounted special_price when present)
   // If hovering a variant, try to use that variant's pricing
   const hoveredVariant = product.variants?.find((v) => v.id === hoveredVariantId) ?? null;
-  const defaultDisplayTitle = hoveredVariant?.title ?? (product.type === "variant" ? (defaultVariant?.title ?? product.title) : product.title);
+  const activeVariantTitle = hoveredVariant?.title ?? defaultVariant?.title ?? null;
+  const defaultDisplayTitle = (product.type === "variant" && activeVariantTitle)
+    ? `${product.title} - ${activeVariantTitle}`
+    : product.title;
   function getPricingForVariant(v: typeof defaultVariant | null) {
     if (!v) return null;
     // Prefer a store pricing that matches defaultPricing store_id if available
@@ -149,6 +152,10 @@ export default function ShopProductCard({ product }: { product: RealApiProduct }
   // ── Handlers ──────────────────────────────────────────────────────────────
   const handleAddToCart = (e: React.MouseEvent) => {
     e.preventDefault();
+    if (product.type === "variant") {
+      void openQuickView(e);
+      return;
+    }
     if (!defaultVariant || !defaultPricing) return;
     const itemId = `${product.id}-v${defaultVariant.id}-s${defaultPricing.store_id}`;
     addItem({
@@ -172,6 +179,7 @@ export default function ShopProductCard({ product }: { product: RealApiProduct }
     });
     // Reflect selected qty (local `qty`) in cart after add
     setTimeout(() => updateQuantity(itemId, qty), 0);
+    toast.success("Product added to cart");
     openCart();
   };
 
@@ -261,6 +269,7 @@ export default function ShopProductCard({ product }: { product: RealApiProduct }
       weightUnit: selectedVariant.weight_unit ?? undefined,
     });
     setTimeout(() => updateQuantity(itemId, qty), 0);
+    toast.success("Product added to cart");
     openCart();
   };
 
@@ -516,6 +525,15 @@ export default function ShopProductCard({ product }: { product: RealApiProduct }
                 {/* ── Image panel ── */}
                 <div className="bg-[#f3f6fa] rounded-t-3xl lg:rounded-l-3xl lg:rounded-tr-none flex flex-col min-h-0">
                   <div className="relative flex-1 min-h-[280px] lg:min-h-0">
+                    {/* Mobile-only close button — fixed at top-right of image, never scrolls */}
+                    <button
+                      type="button"
+                      className="absolute top-3 right-3 z-20 lg:hidden h-9 w-9 rounded-full bg-white/90 shadow-md flex items-center justify-center text-[#0f2444] hover:bg-white transition-colors"
+                      onClick={closeQuickView}
+                      aria-label="Close quick view"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
                     {modalImages.length > 0 ? (
                       <Image
                         src={modalImages[Math.min(activeImageIndex, modalImages.length - 1)]}
@@ -580,7 +598,7 @@ export default function ShopProductCard({ product }: { product: RealApiProduct }
                           </span>
                         )}
                       </div>
-                      <button className="shrink-0 h-8 w-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-[#0f2444] transition-colors"
+                      <button className="shrink-0 h-8 w-8 rounded-full bg-gray-100 hover:bg-gray-200 hidden lg:flex items-center justify-center text-[#0f2444] transition-colors"
                         onClick={closeQuickView} aria-label="Close quick view">
                         <X className="h-4 w-4" />
                       </button>
@@ -588,7 +606,9 @@ export default function ShopProductCard({ product }: { product: RealApiProduct }
 
                     {/* Title */}
                     <h3 className="text-xl sm:text-2xl leading-tight font-extrabold text-[#0f2444]">
-                      {quickViewProduct.title}
+                      {quickViewProduct.type === "variant" && selectedVariant?.title
+                        ? `${quickViewProduct.title} - ${selectedVariant.title}`
+                        : quickViewProduct.title}
                     </h3>
 
                     {/* SKU */}
@@ -672,23 +692,26 @@ export default function ShopProductCard({ product }: { product: RealApiProduct }
                     )}
 
                     {/* Qty + Add to Cart */}
-                    <div className="mt-5 flex flex-wrap items-center gap-2.5">
-                      <div className="h-10 rounded-full bg-gray-100 px-3 flex items-center gap-3 shrink-0">
-                        <button className="text-gray-700" onClick={() => setQty((q) => Math.max(stepQty, q - (quickViewProduct?.policies?.quantity_step_size ?? 1)))} aria-label="Decrease quantity">
-                          <Minus className="h-4 w-4" />
-                        </button>
-                        <span className="min-w-7 text-center text-base font-semibold">{qty}</span>
-                        <button className="text-gray-700" onClick={() => setQty((q) => q + (quickViewProduct?.policies?.quantity_step_size ?? 1))} aria-label="Increase quantity">
-                          <Plus className="h-4 w-4" />
-                        </button>
+                    <div className="mt-5 flex flex-col gap-2.5 lg:flex-row lg:flex-wrap lg:items-center">
+                      {/* Qty control + price: stacked on mobile, inline on desktop */}
+                      <div className="flex items-center gap-2.5">
+                        <div className="h-10 rounded-full bg-gray-100 px-3 flex items-center gap-3 shrink-0">
+                          <button type="button" className="text-gray-700" onClick={() => setQty((q) => Math.max(stepQty, q - (quickViewProduct?.policies?.quantity_step_size ?? 1)))} aria-label="Decrease quantity">
+                            <Minus className="h-4 w-4" />
+                          </button>
+                          <span className="min-w-7 text-center text-base font-semibold">{qty}</span>
+                          <button type="button" className="text-gray-700" onClick={() => setQty((q) => q + (quickViewProduct?.policies?.quantity_step_size ?? 1))} aria-label="Increase quantity">
+                            <Plus className="h-4 w-4" />
+                          </button>
+                        </div>
+                        {priceNow > 0 && (
+                          <span className="text-sm font-bold text-[#0f4d9a] shrink-0">
+                            = {quickViewProduct.currency?.symbol || "₹"}{(priceNow * qty).toFixed(2)}
+                          </span>
+                        )}
                       </div>
-                      {priceNow > 0 && (
-                        <span className="text-sm font-bold text-[#0f4d9a] shrink-0">
-                          = {quickViewProduct.currency?.symbol || "₹"}{(priceNow * qty).toFixed(2)}
-                        </span>
-                      )}
                       <button onClick={addSelectedToCart} disabled={!qvInStock}
-                        className="flex-1 h-10 rounded-full text-white text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed bg-[linear-gradient(135deg,#17396f_0%,#2f6f9f_52%,#49ad57_100%)] flex items-center justify-center gap-1.5">
+                        className="w-full lg:flex-1 h-10 rounded-full text-white text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed bg-[linear-gradient(135deg,#17396f_0%,#2f6f9f_52%,#49ad57_100%)] flex items-center justify-center gap-1.5">
                         <ShoppingBag className="h-4 w-4" />
                         Add to Cart
                       </button>

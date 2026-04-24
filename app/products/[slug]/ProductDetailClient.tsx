@@ -712,6 +712,7 @@ export default function ProductDetailClient({ product, reviews: initialReviews, 
       quantity:     safeQty,
     });
 
+    toast.success("Product added to cart");
     setAddedToCart(true);
     openCart();
     setTimeout(() => setAddedToCart(false), 2500);
@@ -725,7 +726,9 @@ export default function ProductDetailClient({ product, reviews: initialReviews, 
   ];
 
   const tags = product.tags ?? [];
-  const displayTitle = toDisplayTitleCase(selectedVariant?.title?.trim() || productName);
+  const displayTitle = (product.type === "variant" && selectedVariant?.title?.trim())
+    ? toDisplayTitleCase(productName) + " - " + toDisplayTitleCase(selectedVariant.title.trim())
+    : toDisplayTitleCase(productName);
   const wishlisted = isWishlisted(product.id);
 
   const handleWishlist = async () => {
